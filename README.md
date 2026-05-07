@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Heart Disease Prediction using Big Data & Machine Learning
 
 ## BRFSS 2022 | XGBoost + SMOTE | Hadoop HDFS + Apache Spark
@@ -29,3 +30,7 @@ streamlit run app.py
 
 ### Dataset
 Download BRFSS 2022 from: https://www.cdc.gov/brfss/annual_data/annual_2022.html
+=======
+# heart-disease-prediction
+CVD Risk Prediction using BRFSS 2022 + Big Data Pipeline
+>>>>>>> 4a1d263cc4b979d82dc5c24c98b7cd71fa9f0f0a
