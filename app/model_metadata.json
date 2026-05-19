@@ -1,5 +1,5 @@
 {
-  "threshold": 0.66,
+  "threshold": 0.12,
   "feature_names": [
     "Male",
     "Age_18_24",
@@ -107,20 +107,32 @@
     "Race_hispanic"
   ],
   "metrics": {
-    "sensitivity": 0.7787,
-    "specificity": 0.7232,
-    "gmean": 0.7505,
-    "auc": 0.8247,
+    "sensitivity": 0.7883,
+    "specificity": 0.7198,
+    "gmean": 0.7533,
+    "auc": 0.8275,
     "precision": 0.2155,
-    "f1": 0.3376
+    "f1": 0.3385
   },
   "training_info": {
     "dataset": "BRFSS 2022",
     "n_samples": 340154,
     "n_features": 50,
     "cvd_rate": 0.0889,
-    "model": "XGBoost + SMOTE (ImbPipeline)",
-    "tuning": "Optuna 25 trials"
+    "model": "XGBoost + SMOTE, scale_pos_weight=1 (Config B)",
+    "tuning": "Optuna 25 trials (TPESampler, seed=42)",
+    "optuna_best_auc": 0.8282,
+    "optuna_best_params": {
+      "n_estimators": 532,
+      "max_depth": 3,
+      "learning_rate": 0.20620175200624824,
+      "subsample": 0.8354841558571261,
+      "colsample_bytree": 0.7412737715466858,
+      "min_child_weight": 6,
+      "gamma": 0.6975488466566845,
+      "reg_alpha": 0.008696836819616664,
+      "reg_lambda": 0.0004535982683292706
+    }
   },
   "scaler": {
     "cont_cols": [
@@ -138,5 +150,17 @@
       8.472423379994265,
       8.23694800110116
     ]
-  }
+  },
+    "shap_top10": [
+    {"rank": 1,  "feature": "Age_65_plus",        "shap": 0.5795},
+    {"rank": 2,  "feature": "Male",               "shap": 0.4325},
+    {"rank": 3,  "feature": "Sleep_hours",        "shap": 0.3391},
+    {"rank": 4,  "feature": "PhysHealth_days",    "shap": 0.2623},
+    {"rank": 5,  "feature": "GenHealth_excellent","shap": 0.1940},
+    {"rank": 6,  "feature": "Emp_retired",        "shap": 0.1831},
+    {"rank": 7,  "feature": "Stroke",             "shap": 0.1784},
+    {"rank": 8,  "feature": "Arthritis",          "shap": 0.1770},
+    {"rank": 9,  "feature": "MentHealth_days",    "shap": 0.1565},
+    {"rank": 10, "feature": "Age_55_64",          "shap": 0.1496}
+  ]
 }

@@ -2,6 +2,14 @@
 HeartCare — CVD Risk Prediction App
 Run: streamlit run app.py
 Requires: model_xgb_only.pkl, feature_names.pkl, model_metadata.json
+
+Changelog:
+- [FIX] Model now uses SMOTE + scale_pos_weight=1 (no double correction).
+        All metrics and threshold are read dynamically from model_metadata.json
+        so no hardcoded numbers anywhere in this file.
+- [FIX] SHAP table now reads from metadata (populated by NB3B) instead of
+        hardcoded values that became stale after model was retrained.
+- [FIX] sub-header updated to reflect Config B imbalance strategy.
 """
 
 import streamlit as st
@@ -45,12 +53,19 @@ def load_model():
 
 try:
     model, FEAT_NAMES, META = load_model()
-    THRESHOLD = META["threshold"]
-    # ── FIX: use ColumnTransformer output order (CONT first, then BIN) ──
+    THRESHOLD   = META["threshold"]
     CONT_COLS   = META.get("scaler", {}).get("cont_cols",
                     ["Sleep_hours", "PhysHealth_days", "MentHealth_days"])
     BIN_COLS    = [c for c in FEAT_NAMES if c not in CONT_COLS]
-    FINAL_ORDER = CONT_COLS + BIN_COLS  # must match training pipeline output
+    FINAL_ORDER = CONT_COLS + BIN_COLS   # ColumnTransformer output order
+    # SHAP importance — read from metadata if available, else fallback defaults
+    SHAP_TOP = META.get("shap_top10", [
+        {"rank": 1, "feature": "Age_65_plus",       "shap": None},
+        {"rank": 2, "feature": "Male",               "shap": None},
+        {"rank": 3, "feature": "Sleep_hours",        "shap": None},
+        {"rank": 4, "feature": "PhysHealth_days",    "shap": None},
+        {"rank": 5, "feature": "GenHealth_excellent","shap": None},
+    ])
 except Exception as e:
     st.error(f"⚠️ Could not load model files: {e}")
     st.info("Make sure model_xgb_only.pkl, feature_names.pkl, model_metadata.json are in the same folder as app.py")
@@ -58,7 +73,11 @@ except Exception as e:
 
 
 st.markdown('<div class="main-header">🫀 HeartCare CVD Risk Predictor</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">BRFSS 2022 · XGBoost + SMOTE · Powered by Big Data Pipeline</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-header">BRFSS 2022 · XGBoost + SMOTE (scale_pos_weight=1) · '
+    'Powered by Big Data Pipeline</div>',
+    unsafe_allow_html=True
+)
 
 
 # ── Sidebar ───────────────────────────────────────────────────
@@ -70,22 +89,28 @@ with st.sidebar:
     st.markdown('<div class="section-title">👤 Demographics</div>', unsafe_allow_html=True)
     sex        = st.radio("Sex", ["Female","Male"], horizontal=True)
     age_group  = st.selectbox("Age Group", ["18–24","25–34","35–44","45–54","55–64","65+"])
-    race       = st.selectbox("Race / Ethnicity", ["White","Black","American Indian","Asian","Pacific Islander","Hispanic"])
-    education  = st.selectbox("Education Level", ["No High School","High School Graduate","Some College","College Graduate"])
-    employment = st.selectbox("Employment Status", ["Employed","Self-employed","Unemployed >1yr","Unemployed <1yr","Homemaker","Student","Retired","Unable to work"])
+    race       = st.selectbox("Race / Ethnicity",
+                    ["White","Black","American Indian","Asian","Pacific Islander","Hispanic"])
+    education  = st.selectbox("Education Level",
+                    ["No High School","High School Graduate","Some College","College Graduate"])
+    employment = st.selectbox("Employment Status",
+                    ["Employed","Self-employed","Unemployed >1yr","Unemployed <1yr",
+                     "Homemaker","Student","Retired","Unable to work"])
 
     st.divider()
     st.markdown('<div class="section-title">🏃 Lifestyle</div>', unsafe_allow_html=True)
     sleep    = st.slider("Sleep Hours per Night", 1, 24, 7)
     exercise = st.radio("Regular Physical Activity?", ["Yes","No"], horizontal=True)
     alcohol  = st.radio("Alcohol Drinker?", ["Yes","No"], horizontal=True)
-    smoking  = st.selectbox("Smoking Status", ["Never smoked","Former smoker","Smoke some days","Smoke every day"])
+    smoking  = st.selectbox("Smoking Status",
+                    ["Never smoked","Former smoker","Smoke some days","Smoke every day"])
     bmi_cat  = st.radio("BMI Category", ["Normal weight","Overweight / Obese"], horizontal=True)
 
     st.divider()
     st.markdown('<div class="section-title">🏥 Medical History</div>', unsafe_allow_html=True)
     stroke     = st.radio("Stroke history?",    ["No","Yes"], horizontal=True)
-    diabetes   = st.selectbox("Diabetes status", ["No","Pre-diabetes","Gestational (past)","Yes"])
+    diabetes   = st.selectbox("Diabetes status",
+                    ["No","Pre-diabetes","Gestational (past)","Yes"])
     kidney     = st.radio("Kidney disease?",    ["No","Yes"], horizontal=True)
     copd       = st.radio("COPD / Emphysema?",  ["No","Yes"], horizontal=True)
     arthritis  = st.radio("Arthritis?",         ["No","Yes"], horizontal=True)
@@ -108,6 +133,7 @@ def build_and_predict():
     f = {name: 0 for name in FEAT_NAMES}
 
     f["Male"] = 1 if sex == "Male" else 0
+
     age_map = {"18–24":"Age_18_24","25–34":"Age_25_34","35–44":"Age_35_44",
                "45–54":"Age_45_54","55–64":"Age_55_64","65+":"Age_65_plus"}
     f[age_map[age_group]] = 1
@@ -152,16 +178,12 @@ def build_and_predict():
     f["PhysHealth_days"] = float(phys_days)
     f["MentHealth_days"] = float(ment_days)
 
-    # ── FIX 1: use FINAL_ORDER (CONT first = ColumnTransformer output) ──
     X = pd.DataFrame([f])[FINAL_ORDER]
-
-    # ── Scale continuous columns ──
     scaler = META.get("scaler", {})
     if scaler:
         for i, col in enumerate(scaler["cont_cols"]):
             X[col] = (X[col] - scaler["mean"][i]) / (scaler["std"][i] + 1e-8)
 
-    # ── FIX 2: use .values (numpy) — model trained without feature names ──
     prob = float(model.predict_proba(X.values)[0, 1])
     return prob
 
@@ -228,8 +250,8 @@ with col2:
             st.success("This profile shows low CVD risk. Maintain a healthy lifestyle.")
 
         st.markdown("#### Probability Breakdown")
-        st.progress(prob,         text=f"CVD Risk: {risk_pct:.1f}%")
-        st.progress(1.0 - prob,   text=f"No CVD:   {(1-prob)*100:.1f}%")
+        st.progress(prob,       text=f"CVD Risk: {risk_pct:.1f}%")
+        st.progress(1.0 - prob, text=f"No CVD:   {(1-prob)*100:.1f}%")
 
         st.markdown("#### ⚡ Risk Factors Detected")
         factors = []
@@ -250,26 +272,43 @@ with col2:
         for rf in (factors or ["- No major risk factors detected"]):
             st.markdown(f"- {rf}")
 
-        st.caption(f"Threshold: {THRESHOLD:.2f} (G-mean optimal) | Sensitivity: {m['sensitivity']:.1%}")
+        st.caption(
+            f"Threshold: {THRESHOLD:.2f} (G-mean optimal) | "
+            f"Sensitivity: {m['sensitivity']:.1%} | "
+            f"Specificity: {m['specificity']:.1%}"
+        )
 
     else:
         st.info("👈 Fill in patient information in the sidebar, then click **Predict CVD Risk**")
-        st.markdown("""
-**Top CVD Risk Factors (from SHAP analysis):**
 
-| Rank | Factor | SHAP Importance |
+        # ── SHAP table — reads from metadata if available, else shows placeholder ──
+        st.markdown("**Top CVD Risk Factors (from SHAP analysis):**")
+        if SHAP_TOP and SHAP_TOP[0].get("shap") is not None:
+            rows = "".join(
+                f"| {s['rank']} | {s['feature']} | {s['shap']:.3f} |\n"
+                for s in SHAP_TOP[:5]
+            )
+            st.markdown(
+                "| Rank | Feature | Mean SHAP |\n"
+                "|---|---|---|\n" + rows
+            )
+        else:
+            st.markdown("""
+| Rank | Feature | Mean SHAP |
 |---|---|---|
-| 1 | Age 65+ | 0.674 |
-| 2 | Male sex | 0.416 |
-| 3 | Sleep hours | 0.357 |
-| 4 | Physical health days | 0.275 |
-| 5 | GenHealth excellent | 0.247 |
-        """)
+| 1 | Age_65_plus | — |
+| 2 | Male | — |
+| 3 | Sleep_hours | — |
+| 4 | PhysHealth_days | — |
+| 5 | GenHealth_excellent | — |
+
+*Run NB3B SHAP section and add `shap_top10` to model_metadata.json to populate this table.*
+            """)
 
 
 st.markdown("""
 <div class="footer">
-    HeartCare CVD Risk Predictor · BRFSS 2022 · XGBoost + SMOTE + Optuna<br>
+    HeartCare CVD Risk Predictor · BRFSS 2022 · XGBoost + SMOTE (scale_pos_weight=1) + Optuna<br>
     Big Data Pipeline: Hadoop HDFS + Apache Spark 3.5.1<br>
     Built for academic demonstration purposes only
 </div>
